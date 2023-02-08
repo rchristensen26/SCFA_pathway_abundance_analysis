@@ -1,0 +1,193 @@
+---
+title: "pathway_abundance_calculation"
+output: html_document
+---
+
+# adding read count to df
+```{r}
+compiled_bt_hit_summaries_propionate <- left_join(compiled_bt_hit_summaries_propionate, readCountsDF, by = "read_accession")
+compiled_bt_hit_summaries <- inner_join(compiled_bt_hit_summaries_propionate, compiled_bt_hit_summaries_butyrate, by = "read_accession")
+```
+
+# gene length correction
+```{r}
+gene_length_df <- propionate_gene_catalogue_seqlengths
+df <- compiled_bt_hit_summaries_propionate
+
+gene_list <- gene_length_df$gene
+
+for (gene in gene_list) {
+  if (gene %in% colnames(df)){
+    reads_corrected_name <- paste(gene, "length_corrected", sep="_")
+  for (n_row in 1:nrow(df)) {
+    gene_length <- gene_length_df$length[gene_length_df$gene == gene]
+    reads_tot <- df[n_row, "read_tot"]
+    reads_gene <- df[n_row, gene]
+    
+    if (!is.null(reads_gene))
+    df[n_row, reads_corrected_name] <- (reads_gene / (gene_length * reads_tot))
+    }
+  }
+}
+
+compiled_bt_hit_summaries_propionate_length_corrected <- df
+
+# write.csv(df, "butyrate_bowtiehits_lengthcorrected.csv")
+```
+
+# calculating pathway abundances!
+```{r}
+
+gene_list <- c()
+
+for (file in list.files("geneLists")) {
+  file_n <- paste("geneLists", file, sep = "/")
+  gene_list <- read_lines(file_n)
+  
+  pathway <- str_split(file, "_gene_list.txt")[[1]][1]
+  pathways <- append(pathways, pathway)
+  
+  assign(pathway, gene_list)
+  
+  pathway_length <- length(gene_list)
+  pathway_sum_name <- paste(pathway, "sum_reads", sep="_")
+  pathway_sum_length_corrected <- paste(pathway_sum_name, "length_corrected", sep="_")
+  
+  gene_columns = c()
+  for (gene in gene_list){
+    for (column_name in colnames(df)) {
+      gene_name <- str_split(column_name, "_")[[1]][2]
+      if (!is.na(gene_name)) {
+        if (gene == gene_name) {
+          if (grepl("length_corrected", column_name) == TRUE) {
+            gene_columns <- append(gene_columns, column_name)
+          }
+        }
+      }
+    }
+  }
+  
+  for (n_row in 1:nrow(df)) {
+    sum_reads <- 0 # set number of gene counts to 0
+    
+    for (gene in gene_columns) {
+      gene_reads <- df[[n_row, gene]] # get N reads for each gene in the pathway
+      
+      if (!is.na(gene_reads)) {
+        sum_reads = sum_reads + gene_reads # update sum of all reads 
+      }
+    }
+    # add new column values to row
+    df[n_row, pathway_sum_name] <- sum_reads
+    df[n_row, pathway_sum_length_corrected] <- (sum_reads/pathway_length)
+  }
+}
+
+
+```
+
+# subsetting df 
+```{r}
+df <- prop_path_abundances
+n_pathways = 4
+
+df <- df[, -c(1, 3:(ncol(df) - (n_pathways*2)))]
+
+prop_path_abundances <- df
+
+# write.csv(df, "butyrate_pathway_abundances_stripped.csv")
+```
+
+# total butyrate and propionate pathway abundances
+```{r}
+
+# prop_path_abundances$propionate_sum <- rowSums(prop_path_abundances[2:ncol(prop_path_abundances)])
+# 
+# butyrate_path_abundances$butyrate_sum <- rowSums(butyrate_path_abundances[2:ncol(butyrate_path_abundances)])
+
+# df <- merge(prop_path_abundances, butyrate_path_abundances, by = "read_accession", all = T)
+# View(df)
+
+pathway_abundance_df <- df
+
+write.csv(df, "pathway_abundance_df.csv")
+```
+
+# reshape the data from wide to long
+```{r}
+# df <- pathway_abundance_df
+
+# long_df <- melt(df, id.vars = c("read_accession"), measure.vars = c("propionate_sum","butyrate_sum"))
+# 
+# View(long_df)
+# 
+# write.csv(long_df, "pathway_abundance_longdf.csv")
+# 
+# pathway_abundance_df$propionate_butyrate_ratio <- (pathway_abundance_df$propionate_sum / pathway_abundance_df$butyrate_sum)
+# 
+# pathway_abundance_df_long$propionate_butyrate_ratio <- ifelse(pathway_abundance_df_long$read_accession == pathway_abundance_df$read_accession, pathway_abundance_df$propionate_butyrate_ratio, NA)
+# 
+# propionate_pathways_df <- melt(pathway_abundance_df, id.vars = "read_accession", measure.vars = c("P1_WWC_sum_reads_length_corrected", "P1_SP_sum_reads_length_corrected", "P2_sum_reads_length_corrected", "P3_sum_reads_length_corrected"))
+
+butyrate_pathways_df <- melt(pathway_abundance_df, id.vars = "read_accession", measure.vars = c("lysine_sum_reads_length_corrected", "aminobutyrate_sum_reads_length_corrected", "acetyl_CoA_sum_reads_length_corrected", "glutarate_sum_reads_length_corrected"))
+
+```
+
+
+# visualization of data
+```{r}
+# comparison of butyrate and propionate pathway counts
+ggplot(pathway_abundance_df, aes(y = butyrate_sum, x = propionate_sum)) +
+  geom_point() 
+
+ggplot(pathway_abundance_df_long, aes(x = reorder(read_accession, propionate_butyrate_ratio), y = value, fill = variable)) +
+  geom_bar(stat="identity", position="fill") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
+  ggtitle("propionate vs. butyrate pathway proportions") +
+  xlab("read") +
+  ylab("proportion")
+
+ggplot(pathway_abundance_df_long, aes(x = reorder(read_accession, value), y = value, fill = variable)) +
+  geom_bar(stat="identity", position="stack") +
+  theme(axis.ticks.x = element_blank(),  axis.text.x = element_blank()) +
+  xlab("read") +
+  ylab("pathway count")+
+  ggtitle("propionate vs. butyrate pathway counts")
+
+
+# ggplot(pathway_abundance_df, aes( x = reorder(read_accession, propionate_butyrate_ratio), y = propionate_butyrate_ratio)) +
+#   geom_bar(stat = "identity")
+
+# propionate pathways
+ggplot(propionate_pathways_df, aes(x = reorder(read_accession, value), y = value, fill = variable)) +
+  geom_bar(stat="identity", position="stack") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
+  xlab("read") +
+  ylab("pathway count") +
+  ggtitle("propionoate pathways counts")
+
+ggplot(propionate_pathways_df, aes(x = reorder(read_accession,value), y = value, fill = variable)) +
+  geom_bar(stat="identity", position="fill") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
+  xlab("read") +
+  ylab("proportion") +
+  ggtitle("propionoate pathways proportions")
+  
+
+# butyrate pathways
+ggplot(butyrate_pathways_df, aes(x = reorder(read_accession, value), y = value, fill = variable)) +
+  geom_bar(stat="identity", position="stack") +
+  theme(axis.ticks.x = element_blank(), , axis.text.x = element_blank())+
+  xlab("read") +
+  ylab("pathway count") +
+  ggtitle("butyrate pathways counts")
+
+
+ggplot(butyrate_pathways_df, aes(x = reorder(read_accession,value), y = value, fill = variable)) +
+  geom_bar(stat="identity", position="fill") +
+  theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
+  xlab("read") +
+  ylab("proportion") +
+  ggtitle("butyrate pathways proportions")
+
+```

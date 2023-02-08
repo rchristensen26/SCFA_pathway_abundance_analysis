@@ -1,0 +1,44 @@
+---
+title: "df_to_load"
+output: html_document
+date: "2023-02-06"
+---
+
+# read in df from bowtie results. used to calculate pathway abundances
+```{r}
+# bowtie hit summaries for propionate
+compiled_bt_hit_summaries_propionate <- read_csv("compiled_bt_hit_summaries_propionate.csv")
+
+compiled_bt_hit_summaries_butyrate <- read_csv("compiled_bt_hit_summaries_butyrate.csv")
+
+# total read counts for each SRA accession
+readCountsDF <- read_csv("compiled_readCounts.csv")
+
+# gene lengths 
+propionate_gene_catalogue_seqlengths <- read_csv("propionate_gene_catalogue_seqlengths.csv")
+butyrate_gene_catalogue_seqlengths <- read_csv("butyrate_gene_catalogue_seqlengths.csv")
+
+```
+
+# get gene lists for each pathway and pathway length
+```{r}
+pathway_gene_lists <- c()
+pathways <- c()
+
+for (file in list.files("geneLists")) {
+  file_n <- paste("geneLists", file, sep = "/")
+  pathway <- str_split(file, ".txt")[[1]][1]
+  geneList <- readLines(file_n)
+  
+  pathway <- str_split(pathway, "_gene_list")[[1]][1]
+  
+  pathways <- append(pathways, pathway)
+  
+  assign(pathway, geneList)
+  
+  assign(paste(pathway, "_pathway_length", sep = ""), length(geneList))
+  
+  gene_list <- append(gene_list, geneList)
+}
+
+```
